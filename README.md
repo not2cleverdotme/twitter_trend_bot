@@ -1,86 +1,116 @@
-# Cybersecurity Twitter Bot
+# Cybersecurity News Twitter Bot 🚨
 
-An automated Twitter bot that posts cybersecurity-related content every 4 hours using AI-generated content.
+An automated Twitter bot that posts the latest cybersecurity news from reputable sources. The bot fetches news from multiple cybersecurity news feeds, uses OpenAI to create concise summaries, and posts them to Twitter.
 
 ## Features
 
-- Posts every 4 hours automatically using GitHub Actions
-- Generates cybersecurity-focused content using GPT-3.5
-- Topics include:
-  - Recent cybersecurity threats
-  - Security best practices
-  - Privacy tips
-  - Data protection
-  - Network security
+- 🔄 Fetches news from multiple reputable cybersecurity sources:
+  - BleepingComputer
+  - Dark Reading
+  - CyberScoop
+
+- 🎲 Random Selection:
+  - Randomly selects articles from the past 12 hours
+  - Ensures variety in sources and content
+  - Falls back to most recent if no articles in the 12-hour window
+
+- 🤖 Smart Summarization:
+  - Uses OpenAI GPT-3.5 to create concise, informative summaries
+  - Maintains the original context and key points
+  - Automatically adds relevant hashtags based on content
+
+- ⏱️ Automated Posting:
+  - Posts every 4 hours via GitHub Actions
+  - Includes source links for further reading
+  - Handles rate limiting and retries
 
 ## Setup
 
-1. Create a Twitter Developer Account:
-   - Go to [Twitter Developer Portal](https://developer.twitter.com/)
-   - Create a new Project and App
-   - Generate API Keys and Access Tokens
-   - Ensure your App has Read and Write permissions
+### Prerequisites
 
-2. Get an OpenAI API Key:
-   - Go to [OpenAI Platform](https://platform.openai.com/)
-   - Create an account or sign in
-   - Generate an API key
+- Python 3.10 or higher
+- Twitter Developer Account with Elevated access
+- OpenAI API key
 
-3. Configure GitHub Repository:
-   - Fork or clone this repository
-   - Go to Settings > Secrets and Variables > Actions
-   - Add the following secrets:
-     ```
-     TWITTER_API_KEY
-     TWITTER_API_SECRET
-     TWITTER_ACCESS_TOKEN
-     TWITTER_ACCESS_TOKEN_SECRET
-     OPENAI_API_KEY
-     ```
+### Required Environment Variables
 
-4. Enable GitHub Actions:
-   - Go to Actions tab
-   - Enable workflows
-   - The bot will automatically start posting every 4 hours
+```
+TWITTER_API_KEY=your_twitter_api_key
+TWITTER_API_SECRET=your_twitter_api_secret
+TWITTER_ACCESS_TOKEN=your_twitter_access_token
+TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret
+OPENAI_API_KEY=your_openai_api_key
+```
 
-## Local Testing
+### Installation
 
-1. Install dependencies:
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/twitter_trend_bot.git
+cd twitter_trend_bot
+```
+
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Set environment variables:
-```bash
-export TWITTER_API_KEY=your_api_key
-export TWITTER_API_SECRET=your_api_secret
-export TWITTER_ACCESS_TOKEN=your_access_token
-export TWITTER_ACCESS_TOKEN_SECRET=your_access_token_secret
-export OPENAI_API_KEY=your_openai_api_key
-```
+3. Set up GitHub repository secrets:
+   - Go to your repository's Settings > Secrets
+   - Add all the required environment variables listed above
 
-3. Run the bot:
+### Running Locally
+
+To run the bot locally:
+
 ```bash
 python tweet_bot.py
 ```
 
-## Customization
+## GitHub Actions Workflow
 
-To modify the tweet content or frequency:
+The bot runs automatically every 4 hours using GitHub Actions. The workflow:
+- Runs on Ubuntu latest
+- Uses Python 3.10
+- Installs dependencies
+- Executes the bot
+- Handles any errors
 
-1. Edit the prompt in `tweet_bot.py` to change content focus
-2. Modify the cron schedule in `.github/workflows/tweet.yml` to change frequency
+## Tweet Format
 
-## Rate Limits
+Each tweet includes:
+1. 🚨 Attention-grabbing headline
+2. Key findings or impact
+3. Relevant hashtags (#CyberSecurity, #InfoSec, etc.)
+4. Source URL for further reading
 
-- Twitter API v2 (Free Tier): 500 tweets per month
-- OpenAI API: Depends on your plan
+## Error Handling
 
-## Troubleshooting
+The bot includes:
+- Retry logic for API calls
+- Feed parsing error handling
+- Rate limiting management
+- Detailed logging
+- Fallback mechanisms
 
-Common issues:
-1. Rate limit exceeded
-2. Invalid credentials
-3. Network errors
+## Dependencies
 
-Check the GitHub Actions logs for detailed error messages. 
+- tweepy: Twitter API client
+- openai: OpenAI GPT-3.5 integration
+- feedparser: RSS feed parsing
+- tenacity: Retry logic
+- requests: HTTP client
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- Thanks to BleepingComputer, Dark Reading, and CyberScoop for their RSS feeds
+- Built with OpenAI's GPT-3.5 for content summarization
+- Powered by Twitter's API v2 

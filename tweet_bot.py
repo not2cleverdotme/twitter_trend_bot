@@ -6,6 +6,7 @@ import openai
 import requests
 import json
 import feedparser
+import random
 from datetime import datetime, timedelta
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -144,10 +145,25 @@ def fetch_cybersecurity_news():
             # Sort by publication date (newest first)
             all_entries.sort(key=lambda x: x['published'], reverse=True)
             
-            # Get the most recent relevant entry
-            latest_entry = all_entries[0]
-            logger.info(f"Selected latest news from {latest_entry['source']}: {latest_entry['title']}")
-            return latest_entry
+            # Get articles from the last 12 hours for more variety
+            recent_entries = [
+                entry for entry in all_entries 
+                if (datetime.utcnow() - entry['published']).total_seconds() / 3600 <= 12
+            ]
+            
+            if recent_entries:
+                # Randomly select from recent articles
+                selected_entry = random.choice(recent_entries)
+                logger.info(f"Randomly selected news from {selected_entry['source']}: {selected_entry['title']}")
+                logger.info(f"Published: {selected_entry['published']}")
+                logger.info(f"Available articles in last 12 hours: {len(recent_entries)}")
+                return selected_entry
+            else:
+                # Fallback to most recent if no articles in last 12 hours
+                selected_entry = all_entries[0]
+                logger.info(f"No articles in last 12 hours, using most recent from {selected_entry['source']}: {selected_entry['title']}")
+                logger.info(f"Published: {selected_entry['published']}")
+                return selected_entry
         
         logger.warning("No recent news found from any feed")
         return None
