@@ -8,7 +8,12 @@ import json
 import feedparser
 import random
 from datetime import datetime, timedelta
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type
+)
 
 # Configure logging with more detail
 logging.basicConfig(
@@ -257,9 +262,9 @@ Format:
         raise
 
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    reraise=True
+    stop=after_attempt(5),  # Increase max attempts
+    wait=wait_exponential(multiplier=60, min=60, max=3600),  # Wait between 1-60 minutes
+    retry=retry_if_exception_type(tweepy.errors.TooManyRequests)
 )
 def post_tweet():
     """Generate and post a tweet with retry logic."""
@@ -277,23 +282,37 @@ def post_tweet():
             
         logger.info(f"Generated tweet: {tweet_content}")
         
-        # Add small delay before posting
-        time.sleep(2)
-        
-        # Post tweet
-        response = twitter.create_tweet(text=tweet_content)
-        tweet_id = response.data['id']
-        logger.info(f"Successfully posted tweet with ID: {tweet_id}")
-        
-        return tweet_id
+        try:
+            # Post tweet with error handling
+            response = twitter.create_tweet(text=tweet_content)
+            tweet_id = response.data['id']
+            logger.info(f"Successfully posted tweet with ID: {tweet_id}")
+            
+            # Add delay after successful post to help with rate limiting
+            time.sleep(5)
+            
+            return tweet_id
+            
+        except tweepy.errors.TooManyRequests as e:
+            logger.warning(f"Rate limit exceeded. Waiting before retry. Error: {str(e)}")
+            raise  # Let tenacity handle the retry
+        except tweepy.errors.TwitterServerError as e:
+            logger.error(f"Twitter server error: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error posting tweet: {str(e)}")
+            raise
         
     except Exception as e:
-        logger.error(f"Error posting tweet: {str(e)}")
+        logger.error(f"Error in post_tweet: {str(e)}")
         raise
 
 if __name__ == "__main__":
     try:
         logger.info("Starting tweet bot...")
+        
+        # Add initial delay to help with rate limiting
+        time.sleep(random.randint(1, 30))
         
         # Verify all environment variables are set
         required_vars = [
@@ -310,6 +329,9 @@ if __name__ == "__main__":
         
         tweet_id = post_tweet()
         logger.info("Tweet bot completed successfully")
+    except tweepy.errors.TooManyRequests as e:
+        logger.error(f"Rate limit exceeded: {str(e)}")
+        raise
     except Exception as e:
         logger.error(f"Tweet bot failed: {str(e)}")
         raise 
