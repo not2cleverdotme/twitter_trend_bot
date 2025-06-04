@@ -58,6 +58,7 @@ def fetch_cybersecurity_news():
             'from': yesterday,
             'sortBy': 'relevancy',
             'language': 'en',
+            'pageSize': 5,  # Get top 5 articles
             'apiKey': api_key
         }
         
@@ -65,8 +66,22 @@ def fetch_cybersecurity_news():
         if response.status_code == 200:
             news_data = response.json()
             if news_data.get('articles'):
-                # Return the most relevant article
-                return news_data['articles'][0]
+                # Filter out articles without proper content
+                valid_articles = [
+                    article for article in news_data['articles']
+                    if article.get('title') and article.get('description') and
+                    'null' not in article['title'].lower() and
+                    len(article['description']) > 50
+                ]
+                if valid_articles:
+                    logger.info(f"Found {len(valid_articles)} valid news articles")
+                    return valid_articles[0]
+                else:
+                    logger.warning("No valid articles found")
+            else:
+                logger.warning("No articles found in the response")
+        else:
+            logger.warning(f"News API returned status code: {response.status_code}")
         
         return None
     except Exception as e:
@@ -96,37 +111,49 @@ def generate_tweet_content():
         news_article = fetch_cybersecurity_news()
         
         if news_article:
-            prompt = f"""Create a concise, informative tweet about this cybersecurity news:
-            Title: {news_article['title']}
-            Description: {news_article['description']}
+            logger.info("Using news article for tweet generation")
+            logger.info(f"Article title: {news_article['title']}")
             
-            Requirements:
-            1. Summarize the key point
-            2. Add relevant context or impact
-            3. Include 2-3 relevant hashtags
-            4. Keep it under 280 characters
-            5. Make it engaging and informative"""
+            prompt = f"""Create an engaging tweet about this cybersecurity news:
+
+Article: {news_article['title']}
+Details: {news_article['description']}
+
+Your task is to:
+1. Start with a hook or key finding
+2. Add a brief but impactful explanation
+3. End with 2 relevant hashtags
+4. Keep the entire tweet under 280 characters
+5. Make it sound natural, not like a news headline
+
+Example format:
+🚨 Key finding/hook
+Brief explanation or impact
+#relevanthashtag1 #relevanthashtag2"""
+
         else:
-            prompt = """Generate a concise, informative tweet about cybersecurity. 
-            Focus on one of these aspects:
-            - Recent cybersecurity threats
-            - Security best practices
-            - Privacy tips
-            - Data protection
-            - Network security
+            logger.info("No news article found, using default cybersecurity topics")
+            prompt = """Generate an engaging cybersecurity tweet about one of these current topics:
+            - Zero-day vulnerabilities
+            - Ransomware prevention
+            - Multi-factor authentication
+            - Social engineering threats
+            - Password security best practices
             
-            The tweet should be educational and include relevant hashtags.
-            Maximum length: 280 characters.
+            Format:
+            🚨 Start with an attention-grabbing fact or tip
+            Add a brief, practical explanation
+            End with 2 relevant hashtags
             
-            Format: Clear message followed by 2-3 relevant hashtags."""
+            Keep it under 280 characters and make it conversational."""
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a cybersecurity expert creating educational content."},
+                {"role": "system", "content": "You are a cybersecurity expert who creates engaging, informative social media content. Your style is authoritative but conversational."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=100,
+            max_tokens=150,
             temperature=0.7,
             request_timeout=30
         )
@@ -136,7 +163,8 @@ def generate_tweet_content():
         # Ensure tweet is within Twitter's character limit
         if len(tweet_content) > 280:
             tweet_content = tweet_content[:277] + "..."
-            
+        
+        logger.info(f"Generated tweet content: {tweet_content}")
         return tweet_content
 
     except Exception as e:
