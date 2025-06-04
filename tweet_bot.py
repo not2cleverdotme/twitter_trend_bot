@@ -47,10 +47,16 @@ def get_twitter_client():
 def generate_tweet_content():
     """Generate cybersecurity-related tweet content using OpenAI with retry logic."""
     try:
-        if not os.getenv('OPENAI_API_KEY'):
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
             raise ValueError("Missing OPENAI_API_KEY environment variable")
+            
+        # Ensure API key is a clean string without any encoding issues
+        api_key = api_key.strip()
+        if not api_key.startswith('sk-'):
+            raise ValueError("Invalid OpenAI API key format. Key should start with 'sk-'")
 
-        openai.api_key = os.getenv('OPENAI_API_KEY')
+        openai.api_key = api_key
         
         prompt = """Generate a concise, informative tweet about cybersecurity. 
         Focus on one of these aspects:
