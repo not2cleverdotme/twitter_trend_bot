@@ -4,6 +4,7 @@ import tweepy
 import logging
 import openai
 import requests
+import json
 from datetime import datetime, timedelta
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -40,50 +41,92 @@ def get_twitter_client():
         logger.error(f"Error initializing Twitter client: {e}")
         raise
 
-def fetch_cybersecurity_news():
-    """Fetch recent cybersecurity news from various sources."""
+def fetch_reddit_cybersecurity():
+    """Fetch recent posts from r/cybersecurity."""
     try:
-        # Using NewsAPI to fetch cybersecurity news
-        api_key = os.getenv('NEWS_API_KEY')
-        if not api_key:
-            logger.warning("NEWS_API_KEY not found, using default cybersecurity topics")
-            return None
-
-        # Calculate date for last 24 hours
-        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        headers = {'User-Agent': 'CybersecurityNewsBot/1.0'}
+        url = 'https://www.reddit.com/r/cybersecurity/hot.json?limit=10'
+        response = requests.get(url, headers=headers, timeout=10)
         
-        url = 'https://newsapi.org/v2/everything'
-        params = {
-            'q': 'cybersecurity OR "cyber security" OR "cyber attack" OR "data breach"',
-            'from': yesterday,
-            'sortBy': 'relevancy',
-            'language': 'en',
-            'pageSize': 5,  # Get top 5 articles
-            'apiKey': api_key
-        }
-        
-        response = requests.get(url, params=params, timeout=10)
         if response.status_code == 200:
-            news_data = response.json()
-            if news_data.get('articles'):
-                # Filter out articles without proper content
-                valid_articles = [
-                    article for article in news_data['articles']
-                    if article.get('title') and article.get('description') and
-                    'null' not in article['title'].lower() and
-                    len(article['description']) > 50
-                ]
-                if valid_articles:
-                    logger.info(f"Found {len(valid_articles)} valid news articles")
-                    return valid_articles[0]
-                else:
-                    logger.warning("No valid articles found")
-            else:
-                logger.warning("No articles found in the response")
-        else:
-            logger.warning(f"News API returned status code: {response.status_code}")
+            data = response.json()
+            posts = data['data']['children']
+            
+            # Filter out pinned posts and get relevant ones
+            valid_posts = [
+                post['data'] for post in posts
+                if not post['data']['stickied']
+                and post['data']['title']
+                and len(post['data']['title']) > 10
+                and post['data']['score'] > 10  # Has some upvotes
+            ]
+            
+            if valid_posts:
+                top_post = valid_posts[0]
+                return {
+                    'title': top_post['title'],
+                    'description': top_post.get('selftext', '')[:250],
+                    'url': f"https://reddit.com{top_post['permalink']}",
+                    'source': 'Reddit'
+                }
         
         return None
+    except Exception as e:
+        logger.warning(f"Error fetching from Reddit: {e}")
+        return None
+
+def fetch_hackernews_cybersecurity():
+    """Fetch relevant stories from HackerNews."""
+    try:
+        # First get top stories
+        response = requests.get('https://hacker-news.firebaseio.com/v0/topstories.json', timeout=10)
+        if response.status_code == 200:
+            story_ids = response.json()[:20]  # Get top 20 stories
+            
+            for story_id in story_ids:
+                # Get story details
+                story_url = f'https://hacker-news.firebaseio.com/v0/item/{story_id}.json'
+                story_response = requests.get(story_url, timeout=10)
+                
+                if story_response.status_code == 200:
+                    story = story_response.json()
+                    
+                    # Check if story is security related
+                    security_keywords = ['security', 'cyber', 'hack', 'vulnerability', 'breach', 'privacy']
+                    title_lower = story.get('title', '').lower()
+                    
+                    if any(keyword in title_lower for keyword in security_keywords):
+                        return {
+                            'title': story.get('title'),
+                            'description': story.get('text', '')[:250],
+                            'url': story.get('url', f'https://news.ycombinator.com/item?id={story_id}'),
+                            'source': 'HackerNews'
+                        }
+        
+        return None
+    except Exception as e:
+        logger.warning(f"Error fetching from HackerNews: {e}")
+        return None
+
+def fetch_cybersecurity_news():
+    """Fetch recent cybersecurity news from multiple sources."""
+    try:
+        # Try Reddit first
+        logger.info("Fetching news from Reddit...")
+        news = fetch_reddit_cybersecurity()
+        
+        # If no Reddit news, try HackerNews
+        if not news:
+            logger.info("Fetching news from HackerNews...")
+            news = fetch_hackernews_cybersecurity()
+        
+        if news:
+            logger.info(f"Found news from {news['source']}: {news['title']}")
+            return news
+            
+        logger.warning("No news found from any source")
+        return None
+        
     except Exception as e:
         logger.warning(f"Error fetching news: {e}")
         return None
@@ -111,28 +154,30 @@ def generate_tweet_content():
         news_article = fetch_cybersecurity_news()
         
         if news_article:
-            logger.info("Using news article for tweet generation")
-            logger.info(f"Article title: {news_article['title']}")
+            logger.info(f"Using {news_article['source']} article for tweet generation")
+            
+            source_link = f"\nSource: {news_article['url']}"
             
             prompt = f"""Create an engaging tweet about this cybersecurity news:
 
 Article: {news_article['title']}
 Details: {news_article['description']}
+Source: {news_article['source']}
 
 Your task is to:
-1. Start with a hook or key finding
-2. Add a brief but impactful explanation
-3. End with 2 relevant hashtags
-4. Keep the entire tweet under 280 characters
-5. Make it sound natural, not like a news headline
+1. Start with 🚨 and a compelling hook from the article
+2. Add key impact or takeaway
+3. End with relevant hashtag
+4. Leave room for the source URL
+5. Keep it natural and engaging
 
-Example format:
-🚨 Key finding/hook
-Brief explanation or impact
-#relevanthashtag1 #relevanthashtag2"""
+Format example:
+🚨 [Compelling hook]
+[Key impact/takeaway]
+#cybersecurity"""
 
         else:
-            logger.info("No news article found, using default cybersecurity topics")
+            logger.info("No news found, using default cybersecurity topics")
             prompt = """Generate an engaging cybersecurity tweet about one of these current topics:
             - Zero-day vulnerabilities
             - Ransomware prevention
@@ -143,7 +188,7 @@ Brief explanation or impact
             Format:
             🚨 Start with an attention-grabbing fact or tip
             Add a brief, practical explanation
-            End with 2 relevant hashtags
+            End with #cybersecurity
             
             Keep it under 280 characters and make it conversational."""
 
@@ -160,7 +205,15 @@ Brief explanation or impact
         
         tweet_content = response.choices[0].message['content'].strip()
         
-        # Ensure tweet is within Twitter's character limit
+        # If we have a news article, append the source URL
+        if news_article:
+            # Ensure we have room for the URL by truncating if necessary
+            max_length = 280 - len(news_article['url']) - 2  # 2 chars for newline
+            if len(tweet_content) > max_length:
+                tweet_content = tweet_content[:max_length-3] + "..."
+            tweet_content = f"{tweet_content}\n{news_article['url']}"
+        
+        # Final length check
         if len(tweet_content) > 280:
             tweet_content = tweet_content[:277] + "..."
         
