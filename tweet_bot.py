@@ -2,7 +2,6 @@ import os
 import time
 import tweepy
 import logging
-import backoff
 from openai import OpenAI
 from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential
