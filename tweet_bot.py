@@ -2,7 +2,7 @@ import os
 import time
 import tweepy
 import logging
-from openai import OpenAI
+import openai
 from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -50,10 +50,7 @@ def generate_tweet_content():
         if not os.getenv('OPENAI_API_KEY'):
             raise ValueError("Missing OPENAI_API_KEY environment variable")
 
-        client = OpenAI(
-            api_key=os.getenv('OPENAI_API_KEY'),
-            timeout=30.0
-        )
+        openai.api_key = os.getenv('OPENAI_API_KEY')
         
         prompt = """Generate a concise, informative tweet about cybersecurity. 
         Focus on one of these aspects:
@@ -68,17 +65,18 @@ def generate_tweet_content():
         
         Format: Clear message followed by 2-3 relevant hashtags."""
 
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a cybersecurity expert creating educational content."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=100,
-            temperature=0.7
+            temperature=0.7,
+            request_timeout=30
         )
         
-        tweet_content = response.choices[0].message.content.strip()
+        tweet_content = response.choices[0].message['content'].strip()
         
         # Ensure tweet is within Twitter's character limit
         if len(tweet_content) > 280:
