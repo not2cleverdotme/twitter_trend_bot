@@ -261,6 +261,25 @@ Format:
         logger.error(f"Error generating tweet content: {str(e)}")
         raise
 
+def check_rate_limits(client):
+    """Check Twitter rate limits before posting."""
+    try:
+        # Get rate limit status
+        response = client.get_users_tweets(id=client.get_me().data.id)
+        remaining = int(response.rate_limit_remaining)
+        logger.info(f"Rate limit remaining: {remaining}")
+        
+        if remaining < 2:  # Keep a buffer
+            reset_time = int(response.rate_limit_reset)
+            wait_time = reset_time - time.time()
+            if wait_time > 0:
+                logger.warning(f"Rate limit nearly exhausted. Waiting {wait_time:.0f} seconds...")
+                time.sleep(wait_time + 1)  # Add 1 second buffer
+        return True
+    except Exception as e:
+        logger.warning(f"Error checking rate limits: {e}")
+        return False
+
 @retry(
     stop=stop_after_attempt(5),  # Increase max attempts
     wait=wait_exponential(multiplier=60, min=60, max=3600),  # Wait between 1-60 minutes
@@ -271,6 +290,9 @@ def post_tweet():
     try:
         # Get Twitter client
         twitter = get_twitter_client()
+        
+        # Check rate limits before proceeding
+        check_rate_limits(twitter)
         
         # Generate tweet content
         tweet_content = generate_tweet_content()
@@ -311,8 +333,10 @@ if __name__ == "__main__":
     try:
         logger.info("Starting tweet bot...")
         
-        # Add initial delay to help with rate limiting
-        time.sleep(random.randint(1, 30))
+        # Add random initial delay between 1-5 minutes to help prevent concurrent runs
+        initial_delay = random.randint(60, 300)
+        logger.info(f"Adding initial delay of {initial_delay} seconds...")
+        time.sleep(initial_delay)
         
         # Verify all environment variables are set
         required_vars = [
