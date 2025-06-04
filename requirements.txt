@@ -2,4 +2,5 @@ tweepy==4.14.0
 openai==0.28.1
 tenacity==8.2.0
 requests==2.31.0
+feedparser==6.0.10
 beautifulsoup4==4.12.2 

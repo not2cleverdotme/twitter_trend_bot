@@ -5,6 +5,7 @@ import logging
 import openai
 import requests
 import json
+import feedparser
 from datetime import datetime, timedelta
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -41,149 +42,95 @@ def get_twitter_client():
         logger.error(f"Error initializing Twitter client: {e}")
         raise
 
-def fetch_reddit_cybersecurity():
-    """Fetch recent posts from r/cybersecurity."""
-    try:
-        logger.info("Starting Reddit fetch...")
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        url = 'https://www.reddit.com/r/cybersecurity/hot.json?limit=15'
-        
-        logger.info(f"Fetching from Reddit URL: {url}")
-        response = requests.get(url, headers=headers, timeout=10)
-        logger.info(f"Reddit response status: {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            posts = data['data']['children']
-            logger.info(f"Found {len(posts)} total Reddit posts")
-            
-            # Filter out pinned posts and get relevant ones
-            valid_posts = []
-            for post in posts:
-                post_data = post['data']
-                if (not post_data['stickied'] and 
-                    post_data['title'] and 
-                    len(post_data['title']) > 10 and
-                    post_data['score'] > 10 and
-                    not post_data['title'].startswith('Weekly') and
-                    not post_data['title'].startswith('Monthly')):
-                    valid_posts.append(post_data)
-                    logger.info(f"Found valid Reddit post: {post_data['title']}")
-            
-            if valid_posts:
-                top_post = valid_posts[0]
-                logger.info(f"Selected Reddit post: {top_post['title']}")
-                
-                # Get post text or first comment if no text
-                description = top_post.get('selftext', '')
-                if not description and top_post.get('num_comments', 0) > 0:
-                    comment_url = f"https://www.reddit.com{top_post['permalink']}.json"
-                    comment_response = requests.get(comment_url, headers=headers, timeout=10)
-                    if comment_response.status_code == 200:
-                        comment_data = comment_response.json()
-                        if len(comment_data) > 1 and comment_data[1]['data']['children']:
-                            first_comment = comment_data[1]['data']['children'][0]['data']['body']
-                            description = first_comment[:250]
-                
-                return {
-                    'title': top_post['title'],
-                    'description': description[:250] if description else top_post['title'],
-                    'url': f"https://reddit.com{top_post['permalink']}",
-                    'source': 'Reddit'
-                }
-            else:
-                logger.warning("No valid Reddit posts found after filtering")
-        
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching from Reddit: {str(e)}")
-        return None
-
-def fetch_hackernews_cybersecurity():
-    """Fetch relevant stories from HackerNews."""
-    try:
-        logger.info("Starting HackerNews fetch...")
-        response = requests.get('https://hacker-news.firebaseio.com/v0/topstories.json', timeout=10)
-        logger.info(f"HackerNews initial response status: {response.status_code}")
-        
-        if response.status_code == 200:
-            story_ids = response.json()[:30]  # Get top 30 stories
-            logger.info(f"Found {len(story_ids)} HackerNews story IDs")
-            
-            security_keywords = ['security', 'cyber', 'hack', 'vulnerability', 'breach', 'privacy', 'malware', 'ransomware']
-            
-            for story_id in story_ids:
-                story_url = f'https://hacker-news.firebaseio.com/v0/item/{story_id}.json'
-                logger.info(f"Fetching HackerNews story: {story_url}")
-                story_response = requests.get(story_url, timeout=10)
-                
-                if story_response.status_code == 200:
-                    story = story_response.json()
-                    title = story.get('title', '')
-                    logger.info(f"Checking HackerNews story: {title}")
-                    
-                    # Check if story is security related
-                    title_lower = title.lower()
-                    if any(keyword in title_lower for keyword in security_keywords):
-                        logger.info(f"Found relevant HackerNews story: {title}")
-                        
-                        # Try to get text from URL if available
-                        description = ''
-                        if story.get('url'):
-                            try:
-                                url_response = requests.get(story['url'], timeout=5)
-                                if url_response.status_code == 200:
-                                    # Try to get meta description
-                                    from bs4 import BeautifulSoup
-                                    soup = BeautifulSoup(url_response.text, 'html.parser')
-                                    meta_desc = soup.find('meta', attrs={'name': 'description'})
-                                    if meta_desc:
-                                        description = meta_desc.get('content', '')[:250]
-                            except:
-                                pass
-                        
-                        if not description:
-                            description = story.get('text', '')[:250]
-                        
-                        return {
-                            'title': title,
-                            'description': description if description else title,
-                            'url': story.get('url', f'https://news.ycombinator.com/item?id={story_id}'),
-                            'source': 'HackerNews'
-                        }
-        
-        logger.warning("No relevant HackerNews stories found")
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching from HackerNews: {str(e)}")
-        return None
-
 def fetch_cybersecurity_news():
-    """Fetch recent cybersecurity news from multiple sources."""
+    """Fetch recent cybersecurity news from multiple RSS feeds."""
     try:
-        # Try Reddit first
-        logger.info("Attempting to fetch news from Reddit...")
-        news = fetch_reddit_cybersecurity()
-        
-        # If no Reddit news, try HackerNews
-        if not news:
-            logger.info("No Reddit news found, trying HackerNews...")
-            news = fetch_hackernews_cybersecurity()
-        
-        if news:
-            logger.info(f"Successfully found news from {news['source']}:")
-            logger.info(f"Title: {news['title']}")
-            logger.info(f"URL: {news['url']}")
-            logger.info(f"Description length: {len(news['description'])}")
-            return news
+        # List of RSS feeds to check
+        feeds = [
+            {
+                'url': 'https://feeds.feedburner.com/TheHackerNews',
+                'name': 'The Hacker News'
+            },
+            {
+                'url': 'https://www.bleepingcomputer.com/feed',
+                'name': 'BleepingComputer'
+            },
+            {
+                'url': 'https://darkreading.com/rss.xml',
+                'name': 'Dark Reading'
+            },
+            {
+                'url': 'https://www.cyberscoop.com/feed',
+                'name': 'CyberScoop'
+            }
+        ]
+
+        # Get current time for age comparison
+        current_time = datetime.utcnow()
+        all_entries = []
+
+        for feed_info in feeds:
+            try:
+                logger.info(f"Fetching feed from {feed_info['name']}...")
+                feed = feedparser.parse(feed_info['url'])
+                
+                if feed.status == 200:
+                    # Process each entry in the feed
+                    for entry in feed.entries[:5]:  # Look at top 5 entries from each feed
+                        try:
+                            # Get publication date
+                            if hasattr(entry, 'published_parsed'):
+                                pub_date = datetime.fromtimestamp(time.mktime(entry.published_parsed))
+                            elif hasattr(entry, 'updated_parsed'):
+                                pub_date = datetime.fromtimestamp(time.mktime(entry.updated_parsed))
+                            else:
+                                continue
+
+                            # Only include entries from the last 24 hours
+                            age = current_time - pub_date
+                            if age <= timedelta(days=1):
+                                # Clean and format the entry
+                                title = entry.title.strip()
+                                description = entry.get('description', '')
+                                if hasattr(entry, 'summary'):
+                                    description = entry.summary
+                                
+                                # Remove HTML tags from description
+                                description = ' '.join(description.split())  # Clean up whitespace
+                                
+                                all_entries.append({
+                                    'title': title,
+                                    'description': description[:250],  # Limit description length
+                                    'link': entry.link,
+                                    'source': feed_info['name'],
+                                    'published': pub_date,
+                                    'age_minutes': age.total_seconds() / 60
+                                })
+                                logger.info(f"Found article: {title}")
+                        except Exception as e:
+                            logger.warning(f"Error processing entry from {feed_info['name']}: {str(e)}")
+                            continue
+                else:
+                    logger.warning(f"Failed to fetch {feed_info['name']}: Status {feed.status}")
             
-        logger.warning("No news found from any source")
-        return None
+            except Exception as e:
+                logger.warning(f"Error fetching feed {feed_info['name']}: {str(e)}")
+                continue
+
+        if all_entries:
+            # Sort by publication date (newest first)
+            all_entries.sort(key=lambda x: x['published'], reverse=True)
+            
+            # Get the most recent relevant entry
+            latest_entry = all_entries[0]
+            logger.info(f"Selected latest news from {latest_entry['source']}: {latest_entry['title']}")
+            return latest_entry
         
+        logger.warning("No recent news found from any feed")
+        return None
+
     except Exception as e:
-        logger.error(f"Error in main news fetch: {str(e)}")
+        logger.error(f"Error in feed fetching: {str(e)}")
         return None
 
 @retry(
@@ -205,34 +152,32 @@ def generate_tweet_content():
 
         openai.api_key = api_key
         
-        # Fetch recent news
-        news_article = fetch_cybersecurity_news()
+        # Fetch latest news
+        news = fetch_cybersecurity_news()
         
-        if news_article:
-            logger.info(f"Using {news_article['source']} article for tweet generation")
+        if news:
+            logger.info(f"Generating tweet for news from {news['source']}")
             
-            source_link = f"\nSource: {news_article['url']}"
-            
-            prompt = f"""Create an engaging tweet about this cybersecurity news:
+            prompt = f"""Create an engaging cybersecurity news tweet about this:
 
-Article: {news_article['title']}
-Details: {news_article['description']}
-Source: {news_article['source']}
+Article: {news['title']}
+Source: {news['source']}
+Details: {news['description']}
 
-Your task is to:
-1. Start with 🚨 and a compelling hook from the article
-2. Add key impact or takeaway
-3. End with relevant hashtag
-4. Leave room for the source URL
-5. Keep it natural and engaging
+Requirements:
+1. Start with 🚨 and a compelling hook
+2. Highlight key security impact or takeaway
+3. End with #CyberSecurity
+4. Keep it under 250 characters (we'll add the URL)
+5. Make it informative and engaging
 
-Format example:
-🚨 [Compelling hook]
-[Key impact/takeaway]
-#cybersecurity"""
+Example format:
+🚨 [Compelling hook]: Key finding
+Important impact or action item
+#CyberSecurity"""
 
         else:
-            logger.info("No news found, using default cybersecurity topics")
+            logger.info("No recent news found, using default cybersecurity topics")
             prompt = """Generate an engaging cybersecurity tweet about one of these current topics:
             - Zero-day vulnerabilities
             - Ransomware prevention
@@ -243,14 +188,14 @@ Format example:
             Format:
             🚨 Start with an attention-grabbing fact or tip
             Add a brief, practical explanation
-            End with #cybersecurity
+            End with #CyberSecurity
             
             Keep it under 280 characters and make it conversational."""
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a cybersecurity expert who creates engaging, informative social media content. Your style is authoritative but conversational."},
+                {"role": "system", "content": "You are a cybersecurity expert who creates engaging, informative security alerts. Your style is clear, authoritative, and actionable."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=150,
@@ -260,13 +205,13 @@ Format example:
         
         tweet_content = response.choices[0].message['content'].strip()
         
-        # If we have a news article, append the source URL
-        if news_article:
-            # Ensure we have room for the URL by truncating if necessary
-            max_length = 280 - len(news_article['url']) - 2  # 2 chars for newline
+        # If we have news, append the source URL
+        if news:
+            # Ensure we have room for the URL
+            max_length = 280 - len(news['link']) - 2  # 2 chars for newline
             if len(tweet_content) > max_length:
                 tweet_content = tweet_content[:max_length-3] + "..."
-            tweet_content = f"{tweet_content}\n{news_article['url']}"
+            tweet_content = f"{tweet_content}\n{news['link']}"
         
         # Final length check
         if len(tweet_content) > 280:
