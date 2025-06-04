@@ -3,7 +3,8 @@ import time
 import tweepy
 import logging
 import openai
-from datetime import datetime
+import requests
+from datetime import datetime, timedelta
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Configure logging
@@ -39,6 +40,39 @@ def get_twitter_client():
         logger.error(f"Error initializing Twitter client: {e}")
         raise
 
+def fetch_cybersecurity_news():
+    """Fetch recent cybersecurity news from various sources."""
+    try:
+        # Using NewsAPI to fetch cybersecurity news
+        api_key = os.getenv('NEWS_API_KEY')
+        if not api_key:
+            logger.warning("NEWS_API_KEY not found, using default cybersecurity topics")
+            return None
+
+        # Calculate date for last 24 hours
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        url = 'https://newsapi.org/v2/everything'
+        params = {
+            'q': 'cybersecurity OR "cyber security" OR "cyber attack" OR "data breach"',
+            'from': yesterday,
+            'sortBy': 'relevancy',
+            'language': 'en',
+            'apiKey': api_key
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            news_data = response.json()
+            if news_data.get('articles'):
+                # Return the most relevant article
+                return news_data['articles'][0]
+        
+        return None
+    except Exception as e:
+        logger.warning(f"Error fetching news: {e}")
+        return None
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=4, max=10),
@@ -58,18 +92,33 @@ def generate_tweet_content():
 
         openai.api_key = api_key
         
-        prompt = """Generate a concise, informative tweet about cybersecurity. 
-        Focus on one of these aspects:
-        - Recent cybersecurity threats
-        - Security best practices
-        - Privacy tips
-        - Data protection
-        - Network security
+        # Fetch recent news
+        news_article = fetch_cybersecurity_news()
         
-        The tweet should be educational and include relevant hashtags.
-        Maximum length: 280 characters.
-        
-        Format: Clear message followed by 2-3 relevant hashtags."""
+        if news_article:
+            prompt = f"""Create a concise, informative tweet about this cybersecurity news:
+            Title: {news_article['title']}
+            Description: {news_article['description']}
+            
+            Requirements:
+            1. Summarize the key point
+            2. Add relevant context or impact
+            3. Include 2-3 relevant hashtags
+            4. Keep it under 280 characters
+            5. Make it engaging and informative"""
+        else:
+            prompt = """Generate a concise, informative tweet about cybersecurity. 
+            Focus on one of these aspects:
+            - Recent cybersecurity threats
+            - Security best practices
+            - Privacy tips
+            - Data protection
+            - Network security
+            
+            The tweet should be educational and include relevant hashtags.
+            Maximum length: 280 characters.
+            
+            Format: Clear message followed by 2-3 relevant hashtags."""
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
