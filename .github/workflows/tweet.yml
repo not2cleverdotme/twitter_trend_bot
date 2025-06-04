@@ -1,14 +1,19 @@
-name: Automated Cybersecurity Tweets
+name: Tweet Bot
 
 on:
   schedule:
     - cron: '0 */2 * * *'  # Run every 2 hours
   workflow_dispatch:  # Allow manual trigger
 
+# Add concurrency control
+concurrency:
+  group: tweet-bot
+  cancel-in-progress: true
+
 jobs:
   tweet:
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # Add timeout for the entire job
+    timeout-minutes: 15  # Increased timeout to account for rate limit waits
     
     steps:
     - uses: actions/checkout@v3  # Updated to v3
@@ -24,6 +29,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
+    - name: Add random delay
+      run: |
+        sleep $(( RANDOM % 300 ))  # Random delay up to 5 minutes
+    
     - name: Run tweet bot
       env:
         TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
@@ -31,13 +40,4 @@ jobs:
         TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
         TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      run: |
-        # Add retry logic for the entire script
-        for i in 1 2 3; do
-          if python tweet_bot.py; then
-            exit 0
-          fi
-          echo "Attempt $i failed. Waiting before retry..."
-          sleep $((i * 10))
-        done
-        exit 1 
+      run: python tweet_bot.py 
