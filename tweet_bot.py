@@ -48,19 +48,15 @@ def fetch_cybersecurity_news():
         # List of RSS feeds to check
         feeds = [
             {
-                'url': 'https://feeds.feedburner.com/TheHackerNews',
-                'name': 'The Hacker News'
-            },
-            {
-                'url': 'https://www.bleepingcomputer.com/feed',
+                'url': 'https://www.bleepingcomputer.com/feed/',
                 'name': 'BleepingComputer'
             },
             {
-                'url': 'https://darkreading.com/rss.xml',
+                'url': 'https://www.darkreading.com/rss_simple.asp',
                 'name': 'Dark Reading'
             },
             {
-                'url': 'https://www.cyberscoop.com/feed',
+                'url': 'https://www.cyberscoop.com/feed/',
                 'name': 'CyberScoop'
             }
         ]
@@ -72,46 +68,73 @@ def fetch_cybersecurity_news():
         for feed_info in feeds:
             try:
                 logger.info(f"Fetching feed from {feed_info['name']}...")
-                feed = feedparser.parse(feed_info['url'])
                 
-                if feed.status == 200:
-                    # Process each entry in the feed
-                    for entry in feed.entries[:5]:  # Look at top 5 entries from each feed
-                        try:
-                            # Get publication date
-                            if hasattr(entry, 'published_parsed'):
-                                pub_date = datetime.fromtimestamp(time.mktime(entry.published_parsed))
-                            elif hasattr(entry, 'updated_parsed'):
-                                pub_date = datetime.fromtimestamp(time.mktime(entry.updated_parsed))
-                            else:
-                                continue
-
-                            # Only include entries from the last 24 hours
-                            age = current_time - pub_date
-                            if age <= timedelta(days=1):
-                                # Clean and format the entry
-                                title = entry.title.strip()
-                                description = entry.get('description', '')
-                                if hasattr(entry, 'summary'):
-                                    description = entry.summary
-                                
-                                # Remove HTML tags from description
-                                description = ' '.join(description.split())  # Clean up whitespace
-                                
-                                all_entries.append({
-                                    'title': title,
-                                    'description': description[:250],  # Limit description length
-                                    'link': entry.link,
-                                    'source': feed_info['name'],
-                                    'published': pub_date,
-                                    'age_minutes': age.total_seconds() / 60
-                                })
-                                logger.info(f"Found article: {title}")
-                        except Exception as e:
-                            logger.warning(f"Error processing entry from {feed_info['name']}: {str(e)}")
+                # Add headers to avoid 403 errors
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+                
+                # First try with requests to handle redirects
+                response = requests.get(feed_info['url'], headers=headers, timeout=10, allow_redirects=True)
+                if response.status_code != 200:
+                    logger.warning(f"Failed to fetch {feed_info['name']}: Status {response.status_code}")
+                    continue
+                
+                # Parse the feed content
+                feed = feedparser.parse(response.content)
+                
+                if not feed.entries:
+                    logger.warning(f"No entries found in {feed_info['name']}")
+                    continue
+                
+                logger.info(f"Found {len(feed.entries)} entries in {feed_info['name']}")
+                
+                # Process each entry in the feed
+                for entry in feed.entries[:5]:  # Look at top 5 entries from each feed
+                    try:
+                        # Get publication date
+                        if hasattr(entry, 'published_parsed'):
+                            pub_date = datetime.fromtimestamp(time.mktime(entry.published_parsed))
+                        elif hasattr(entry, 'updated_parsed'):
+                            pub_date = datetime.fromtimestamp(time.mktime(entry.updated_parsed))
+                        else:
+                            logger.warning(f"No date found for entry in {feed_info['name']}")
                             continue
-                else:
-                    logger.warning(f"Failed to fetch {feed_info['name']}: Status {feed.status}")
+
+                        # Only include entries from the last 24 hours
+                        age = current_time - pub_date
+                        if age <= timedelta(days=1):
+                            # Clean and format the entry
+                            title = entry.title.strip()
+                            
+                            # Try different fields for content
+                            description = None
+                            for field in ['description', 'summary', 'content']:
+                                if hasattr(entry, field):
+                                    content = getattr(entry, field)
+                                    if isinstance(content, list):  # Handle content list
+                                        content = content[0].value
+                                    description = content
+                                    break
+                            
+                            if not description:
+                                description = title
+                            
+                            # Clean up description
+                            description = ' '.join(description.split())  # Clean up whitespace
+                            
+                            all_entries.append({
+                                'title': title,
+                                'description': description[:250],  # Limit description length
+                                'link': entry.link,
+                                'source': feed_info['name'],
+                                'published': pub_date,
+                                'age_minutes': age.total_seconds() / 60
+                            })
+                            logger.info(f"Found article: {title}")
+                    except Exception as e:
+                        logger.warning(f"Error processing entry from {feed_info['name']}: {str(e)}")
+                        continue
             
             except Exception as e:
                 logger.warning(f"Error fetching feed {feed_info['name']}: {str(e)}")
@@ -230,6 +253,12 @@ def post_tweet():
         
         # Generate tweet content
         tweet_content = generate_tweet_content()
+        
+        # Check if we have content to tweet
+        if not tweet_content:
+            logger.warning("No tweet content generated, skipping post")
+            return None
+            
         logger.info(f"Generated tweet: {tweet_content}")
         
         # Add small delay before posting
