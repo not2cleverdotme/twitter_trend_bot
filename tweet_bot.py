@@ -262,7 +262,7 @@ Format:
         raise
 
 @retry(
-    stop=after_attempt(5),  # Increase max attempts
+    stop=stop_after_attempt(5),  # Increase max attempts
     wait=wait_exponential(multiplier=60, min=60, max=3600),  # Wait between 1-60 minutes
     retry=retry_if_exception_type(tweepy.errors.TooManyRequests)
 )
