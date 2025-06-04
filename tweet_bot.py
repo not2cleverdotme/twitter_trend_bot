@@ -139,7 +139,7 @@ def fetch_cybersecurity_news():
     reraise=True
 )
 def generate_tweet_content():
-    """Generate cybersecurity-related tweet content using OpenAI with retry logic."""
+    """Generate a tweet by summarizing cybersecurity news article."""
     try:
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
@@ -155,70 +155,63 @@ def generate_tweet_content():
         # Fetch latest news
         news = fetch_cybersecurity_news()
         
-        if news:
-            logger.info(f"Generating tweet for news from {news['source']}")
-            
-            prompt = f"""Create an engaging cybersecurity news tweet about this:
+        if not news:
+            logger.warning("No recent news found")
+            return None
 
-Article: {news['title']}
+        logger.info(f"Summarizing article from {news['source']}")
+        
+        prompt = f"""Summarize this cybersecurity article into a concise tweet:
+
+Title: {news['title']}
 Source: {news['source']}
-Details: {news['description']}
+Content: {news['description']}
 
-Requirements:
-1. Start with 🚨 and a compelling hook
-2. Highlight key security impact or takeaway
-3. End with #CyberSecurity
-4. Keep it under 250 characters (we'll add the URL)
-5. Make it informative and engaging
+Guidelines:
+1. Extract the most important security finding/alert/update
+2. Focus on impact or actionable insight
+3. Keep it factual and specific to the article
+4. Do not add generic advice
+5. Do not use hashtags - they will be added later
+6. Keep it under 200 characters to leave room for the URL
 
-Example format:
-🚨 [Compelling hook]: Key finding
-Important impact or action item
-#CyberSecurity"""
-
-        else:
-            logger.info("No recent news found, using default cybersecurity topics")
-            prompt = """Generate an engaging cybersecurity tweet about one of these current topics:
-            - Zero-day vulnerabilities
-            - Ransomware prevention
-            - Multi-factor authentication
-            - Social engineering threats
-            - Password security best practices
-            
-            Format:
-            🚨 Start with an attention-grabbing fact or tip
-            Add a brief, practical explanation
-            End with #CyberSecurity
-            
-            Keep it under 280 characters and make it conversational."""
+Format:
+🚨 [Key finding/alert]
+[Brief impact or importance]"""
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a cybersecurity expert who creates engaging, informative security alerts. Your style is clear, authoritative, and actionable."},
+                {"role": "system", "content": "You are a cybersecurity news editor who creates clear, factual summaries. Focus only on the specific news provided."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=150,
-            temperature=0.7,
+            max_tokens=100,
+            temperature=0.5,  # Lower temperature for more focused summaries
             request_timeout=30
         )
         
         tweet_content = response.choices[0].message['content'].strip()
         
-        # If we have news, append the source URL
-        if news:
-            # Ensure we have room for the URL
-            max_length = 280 - len(news['link']) - 2  # 2 chars for newline
-            if len(tweet_content) > max_length:
-                tweet_content = tweet_content[:max_length-3] + "..."
-            tweet_content = f"{tweet_content}\n{news['link']}"
+        # Add hashtags based on content
+        hashtags = "#CyberSecurity"
+        if 'ransomware' in tweet_content.lower() or 'ransom' in tweet_content.lower():
+            hashtags += " #Ransomware"
+        elif 'breach' in tweet_content.lower() or 'leak' in tweet_content.lower():
+            hashtags += " #DataBreach"
+        elif 'vulnerability' in tweet_content.lower() or 'cve' in tweet_content.lower():
+            hashtags += " #InfoSec"
+        elif 'malware' in tweet_content.lower() or 'virus' in tweet_content.lower():
+            hashtags += " #Malware"
         
-        # Final length check
-        if len(tweet_content) > 280:
-            tweet_content = tweet_content[:277] + "..."
+        # Combine content with hashtags and URL
+        max_length = 280 - len(news['link']) - len(hashtags) - 4  # 4 chars for newlines
+        if len(tweet_content) > max_length:
+            tweet_content = tweet_content[:max_length-3] + "..."
         
-        logger.info(f"Generated tweet content: {tweet_content}")
-        return tweet_content
+        final_tweet = f"{tweet_content}\n{hashtags}\n{news['link']}"
+        
+        logger.info(f"Generated tweet content: {final_tweet}")
+        return final_tweet
 
     except Exception as e:
         logger.error(f"Error generating tweet content: {str(e)}")
