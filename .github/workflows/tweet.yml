@@ -2,7 +2,7 @@ name: Tweet Bot
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # Run every 2 hours
+    - cron: '0 */5 * * *'  # Run every 5 hours
   workflow_dispatch:  # Allow manual trigger
 
 # Add concurrency control
