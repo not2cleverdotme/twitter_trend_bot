@@ -2,7 +2,7 @@ name: Automated Cybersecurity Tweets
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # Run every 4 hours
+    - cron: '0 */2 * * *'  # Run every 2 hours
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
