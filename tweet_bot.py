@@ -50,7 +50,10 @@ def generate_tweet_content():
         if not os.getenv('OPENAI_API_KEY'):
             raise ValueError("Missing OPENAI_API_KEY environment variable")
 
-        client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        client = OpenAI(
+            api_key=os.getenv('OPENAI_API_KEY'),
+            timeout=30.0
+        )
         
         prompt = """Generate a concise, informative tweet about cybersecurity. 
         Focus on one of these aspects:
@@ -72,8 +75,7 @@ def generate_tweet_content():
                 {"role": "user", "content": prompt}
             ],
             max_tokens=100,
-            temperature=0.7,
-            timeout=30.0  # Add timeout
+            temperature=0.7
         )
         
         tweet_content = response.choices[0].message.content.strip()
