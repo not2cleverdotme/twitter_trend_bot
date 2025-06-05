@@ -20,7 +20,7 @@ An automated Twitter bot that posts the latest cybersecurity news from reputable
   - Automatically adds relevant hashtags based on content
 
 - ⏱️ Automated Posting:
-  - Posts every 6 hours via GitHub Actions
+  - Posts every 5 hours via GitHub Actions
   - Includes source links for further reading
   - Handles rate limiting and retries
 
