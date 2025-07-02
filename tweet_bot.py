@@ -7,6 +7,7 @@ import requests
 import json
 import feedparser
 import random
+import hashlib
 from datetime import datetime, timedelta
 from tenacity import (
     retry,
@@ -21,6 +22,8 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+POSTED_ARTICLES_FILE = 'posted_articles.json'
 
 def get_twitter_client():
     """Initialize Twitter client with API credentials."""
@@ -64,6 +67,30 @@ def fetch_cybersecurity_news():
             {
                 'url': 'https://www.cyberscoop.com/feed/',
                 'name': 'CyberScoop'
+            },
+            {
+                'url': 'https://feeds.feedburner.com/TheHackersNews',
+                'name': 'The Hacker News'
+            },
+            {
+                'url': 'https://blog.rapid7.com/rss/',
+                'name': 'Rapid7 Blog'
+            },
+            {
+                'url': 'https://techcrunch.com/tag/security/feed/',
+                'name': 'TechCrunch'
+            },
+            {
+                'url': 'https://www.hackread.com/feed/',
+                'name': 'HackRead'
+            },
+            {
+                'url': 'https://krebsonsecurity.com/feed/',
+                'name': 'Krebs on Security'
+            },
+            {
+                'url': 'https://threatpost.com/feed/',
+                'name': 'Threatpost'
             }
         ]
 
@@ -203,6 +230,13 @@ def generate_tweet_content():
             logger.warning("No recent news found")
             return None
 
+        # Check for duplicate article
+        article_hash = get_article_hash(news)
+        posted_articles = load_posted_articles()
+        if article_hash in posted_articles:
+            logger.info(f"Article already posted: {news['title']} ({news['link']})")
+            return None
+
         logger.info(f"Summarizing article from {news['source']}")
         
         prompt = f"""Summarize this cybersecurity article into a concise tweet:
@@ -255,7 +289,7 @@ Format:
         final_tweet = f"{tweet_content}\n{hashtags}\n{news['link']}"
         
         logger.info(f"Generated tweet content: {final_tweet}")
-        return final_tweet
+        return final_tweet, article_hash
 
     except Exception as e:
         logger.error(f"Error generating tweet content: {str(e)}")
@@ -295,12 +329,15 @@ def post_tweet():
         check_rate_limits(twitter)
         
         # Generate tweet content
-        tweet_content = generate_tweet_content()
-        
-        # Check if we have content to tweet
-        if not tweet_content:
+        result = generate_tweet_content()
+        if not result:
             logger.warning("No tweet content generated, skipping post")
             return None
+        if isinstance(result, tuple):
+            tweet_content, article_hash = result
+        else:
+            tweet_content = result
+            article_hash = None
             
         logger.info(f"Generated tweet: {tweet_content}")
         
@@ -309,7 +346,9 @@ def post_tweet():
             response = twitter.create_tweet(text=tweet_content)
             tweet_id = response.data['id']
             logger.info(f"Successfully posted tweet with ID: {tweet_id}")
-            
+            # Save posted article hash
+            if article_hash:
+                save_posted_article(article_hash)
             # Add delay after successful post to help with rate limiting
             time.sleep(5)
             
@@ -328,6 +367,33 @@ def post_tweet():
     except Exception as e:
         logger.error(f"Error in post_tweet: {str(e)}")
         raise
+
+def load_posted_articles():
+    """Load the set of posted article hashes from the local file."""
+    if not os.path.exists(POSTED_ARTICLES_FILE):
+        return set()
+    try:
+        with open(POSTED_ARTICLES_FILE, 'r') as f:
+            data = json.load(f)
+            return set(data)
+    except Exception as e:
+        logger.warning(f"Could not load posted articles file: {e}")
+        return set()
+
+def save_posted_article(article_hash):
+    """Save a new article hash to the local file."""
+    posted = load_posted_articles()
+    posted.add(article_hash)
+    try:
+        with open(POSTED_ARTICLES_FILE, 'w') as f:
+            json.dump(list(posted), f)
+    except Exception as e:
+        logger.warning(f"Could not save posted article: {e}")
+
+def get_article_hash(news):
+    """Generate a unique hash for an article based on its title and link."""
+    unique_str = f"{news.get('title','')}|{news.get('link','')}"
+    return hashlib.sha256(unique_str.encode('utf-8')).hexdigest()
 
 if __name__ == "__main__":
     try:

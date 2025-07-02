@@ -8,11 +8,20 @@ An automated Twitter bot that posts the latest cybersecurity news from reputable
   - BleepingComputer
   - Dark Reading
   - CyberScoop
+  - The Hacker News
+  - Rapid7 Blog
+  - TechCrunch
+  - HackRead
+  - Krebs on Security
+  - Threatpost
 
 - 🎲 Random Selection:
   - Randomly selects articles from the past 12 hours
   - Ensures variety in sources and content
   - Falls back to most recent if no articles in the 12-hour window
+
+- 🚫 Duplicate Prevention:
+  - Tracks posted articles and ensures the same article is never posted more than once
 
 - 🤖 Smart Summarization:
   - Uses OpenAI GPT-3.5 to create concise, informative summaries
@@ -20,7 +29,7 @@ An automated Twitter bot that posts the latest cybersecurity news from reputable
   - Automatically adds relevant hashtags based on content
 
 - ⏱️ Automated Posting:
-  - Posts every 5 hours via GitHub Actions
+  - Posts every 4 hours via GitHub Actions
   - Includes source links for further reading
   - Handles rate limiting and retries
 
@@ -90,6 +99,7 @@ The bot includes:
 - Retry logic for API calls
 - Feed parsing error handling
 - Rate limiting management
+- Duplicate prevention (no article is posted more than once)
 - Detailed logging
 - Fallback mechanisms
 
@@ -111,6 +121,13 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- Thanks to BleepingComputer, Dark Reading, and CyberScoop for their RSS feeds
-- Built with OpenAI's GPT-3.5 for content summarization
-- Powered by Twitter's API v2 
+Thanks to the following sources for their RSS feeds:
+  - BleepingComputer
+  - Dark Reading
+  - CyberScoop
+  - The Hacker News
+  - Rapid7 Blog
+  - TechCrunch
+  - HackRead
+  - Krebs on Security
+  - Threatpost
