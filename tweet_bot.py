@@ -230,11 +230,11 @@ def generate_tweet_content():
             logger.warning("No recent news found")
             return None
 
-        # Check for duplicate article
+        # Check for duplicate article in local history
         article_hash = get_article_hash(news)
         posted_articles = load_posted_articles()
         if article_hash in posted_articles:
-            logger.info(f"Article already posted: {news['title']} ({news['link']})")
+            logger.info(f"Article already posted (local history): {news['title']} ({news['link']})")
             return None
 
         logger.info(f"Summarizing article from {news['source']}")
@@ -270,23 +270,12 @@ Format:
         
         tweet_content = response.choices[0].message['content'].strip()
         
-        # Add hashtags based on content
-        hashtags = "#CyberSecurity"
-        if 'ransomware' in tweet_content.lower() or 'ransom' in tweet_content.lower():
-            hashtags += " #Ransomware"
-        elif 'breach' in tweet_content.lower() or 'leak' in tweet_content.lower():
-            hashtags += " #DataBreach"
-        elif 'vulnerability' in tweet_content.lower() or 'cve' in tweet_content.lower():
-            hashtags += " #InfoSec"
-        elif 'malware' in tweet_content.lower() or 'virus' in tweet_content.lower():
-            hashtags += " #Malware"
-        
-        # Combine content with hashtags and URL
-        max_length = 280 - len(news['link']) - len(hashtags) - 4  # 4 chars for newlines
+        # Combine content with URL
+        max_length = 280 - len(news['link']) - 1  # 1 char for newline
         if len(tweet_content) > max_length:
             tweet_content = tweet_content[:max_length-3] + "..."
         
-        final_tweet = f"{tweet_content}\n{hashtags}\n{news['link']}"
+        final_tweet = f"{tweet_content}\n{news['link']}"
         
         logger.info(f"Generated tweet content: {final_tweet}")
         return final_tweet, article_hash
@@ -315,6 +304,71 @@ def check_rate_limits(client):
         return False
 
 @retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=4, max=10),
+    retry=retry_if_exception_type((tweepy.errors.TooManyRequests, tweepy.errors.TwitterServerError))
+)
+def get_recent_tweets(client, max_results=20):
+    """Get recent tweets from the user's timeline with retry logic."""
+    try:
+        user_id = client.get_me().data.id
+        tweets = client.get_users_tweets(
+            id=user_id,
+            max_results=max_results,
+            tweet_fields=['created_at', 'text']
+        )
+        return tweets.data if tweets.data else []
+    except tweepy.errors.TooManyRequests as e:
+        logger.warning(f"Rate limit exceeded while fetching tweets: {e}")
+        raise
+    except tweepy.errors.TwitterServerError as e:
+        logger.warning(f"Twitter server error while fetching tweets: {e}")
+        raise
+    except Exception as e:
+        logger.warning(f"Error fetching recent tweets: {e}")
+        return []
+
+def is_article_already_posted(client, news):
+    """Check if an article has already been posted by checking recent tweets."""
+    try:
+        recent_tweets = get_recent_tweets(client)
+        
+        if not recent_tweets:
+            logger.warning("Could not fetch recent tweets, proceeding with local history check only")
+            return False
+        
+        # Create a simple identifier for the article
+        article_title = news.get('title', '').lower()
+        article_link = news.get('link', '')
+        
+        for tweet in recent_tweets:
+            tweet_text = tweet.text.lower()
+            # Check if the tweet contains the article link
+            if article_link in tweet_text:
+                logger.info(f"Article already posted on Twitter: {news.get('title', '')}")
+                return True
+            # Check if the tweet contains the article title (partial match)
+            if article_title and len(article_title) > 10:
+                # Use a substring of the title for matching
+                title_substring = article_title[:30]  # First 30 chars
+                if title_substring in tweet_text:
+                    logger.info(f"Article title already posted on Twitter: {news.get('title', '')}")
+                    return True
+        
+        return False
+    except tweepy.errors.TooManyRequests as e:
+        logger.warning(f"Rate limit exceeded while checking for duplicates: {e}")
+        # Fall back to local history only
+        return False
+    except tweepy.errors.TwitterServerError as e:
+        logger.warning(f"Twitter server error while checking for duplicates: {e}")
+        # Fall back to local history only
+        return False
+    except Exception as e:
+        logger.warning(f"Error checking if article already posted: {e}")
+        return False
+
+@retry(
     stop=stop_after_attempt(5),  # Increase max attempts
     wait=wait_exponential(multiplier=60, min=60, max=3600),  # Wait between 1-60 minutes
     retry=retry_if_exception_type(tweepy.errors.TooManyRequests)
@@ -327,6 +381,17 @@ def post_tweet():
         
         # Check rate limits before proceeding
         check_rate_limits(twitter)
+        
+        # Fetch news for Twitter feed checking
+        news = fetch_cybersecurity_news()
+        if not news:
+            logger.warning("No recent news found")
+            return None
+            
+        # Check if article already posted on Twitter (with fallback to local history)
+        if is_article_already_posted(twitter, news):
+            logger.info(f"Article already posted on Twitter, skipping: {news['title']}")
+            return None
         
         # Generate tweet content
         result = generate_tweet_content()
